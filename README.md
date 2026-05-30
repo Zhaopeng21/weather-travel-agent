@@ -1,8 +1,4 @@
-这里为你整理好了完美的 Markdown 格式。我帮你加上了正确的标题层级、列表排版，并且**修复了代码块未闭合的问题**。
 
-你只需要点击代码框右上角的 **“复制 (Copy)”** 按钮，然后直接粘贴到你的 `README.md` 文件里就可以了：
-
-```markdown
 # 🌍 SkyGuide: Interactive AI Travel Concierge
 
 An Elite, Multi-Turn Interactive Travel Agent powered by Large Language Models and Live Meteorological Radar.
@@ -59,7 +55,6 @@ pip install -r requirements.txt
 **3. Configure Environment Variables**
 Create a file named `.env` in the root directory of the project.
 
-> ⚠️ **CRITICAL SECURITY NOTE:** The `.env` file contains your private API credentials. Keep it strictly on your local machine and NEVER commit or push it to GitHub.
 
 Add your personal API tokens using the following template:
 
