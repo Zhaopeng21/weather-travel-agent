@@ -4,28 +4,26 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from tools import get_current_weather
 
+# 加载环境变量
 load_dotenv()
 
-# Initialize Groq client via OpenAI SDK
+# 初始化 Groq 客户端
 client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
     api_key=os.getenv("GROQ_API_KEY")
 )
 
-# Tool definition schema for LLM function calling
+# 智能体专属：天气工具声明
 tools = [
     {
         "type": "function",
         "function": {
             "name": "get_current_weather",
-            "description": "Get current weather and temperature for a specific city.",
+            "description": "Get current detailed weather analytics (temp, feels_like, wind_speed, clouds_all, weather_main) for a specific city.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "city": {
-                        "type": "string",
-                        "description": "City name, e.g., 'Auckland', 'London'"
-                    }
+                    "city": {"type": "string", "description": "City name, e.g., 'London', 'Harbin'"}
                 },
                 "required": ["city"]
             }
@@ -33,83 +31,80 @@ tools = [
     }
 ]
 
-def run_agent():
-    print("⚡ Groq Agent: Weather-Aware Travel Planner initialized.")
-    print("Type 'quit' to exit.\n")
-    
-    # Core context memory setup
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are an AI travel assistant. Your goal is to customize itineraries based on destination weather.\n"
-                "Core Logic:\n"
-                "1. Always invoke the weather tool first when a user asks about a city.\n"
-                "2. Conditional decision: If it is raining/storming, prioritize indoor spots (museums, galleries, indoor dining).\n"
-                "   If the weather is clear/sunny, prioritize outdoor activities (parks, beaches, walking tours).\n"
-                "3. Explicitly state the weather condition in your final response and justify your choices based on it."
-            )
-        }
-    ]
+# 🧠 强制步进版提示词：一次只问一个问题，循序渐进！
+SYSTEM_PROMPT = (
+    "You are an Elite Last-Minute Travel Planner. You plan immediate trips based on real-time weather data.\n\n"
+    "CRITICAL CONVERSATION PROTOCOL:\n"
+    "1. NEVER ASK FOR DATES, MONTHS, TIME, OR SEASONS. Assume the user is traveling RIGHT NOW, TODAY.\n\n"
+    "2. USER PROFILE CHECKLIST (4 Dimensions):\n"
+    "   - Destination (Target City)\n"
+    "   - Companions & Travel Style (e.g., solo, family, fast-paced, relaxing)\n"
+    "   - Duration (How many days starting from today)\n"
+    "   - Budget Level (e.g., backpacker, moderate, luxury)\n\n"
+    "3. THE STEP-BY-STEP INTERVIEW RULE (STRICTLY ENFORCED):\n"
+    "   - DO NOT ask for all missing information at once. You MUST ask ONE dimension per turn.\n"
+    "   - Priority 1: If Companions & Style is missing, ask ONLY about that. Stop and wait for the user.\n"
+    "   - Priority 2: If Companions are known but Duration is missing, ask ONLY about how many days. Stop and wait.\n"
+    "   - Priority 3: If Duration is known but Budget is missing, ask ONLY about their budget. Stop and wait.\n"
+    "   - Keep your responses extremely short, warm, and natural (maximum 1 or 2 sentences per question).\n\n"
+    "4. REAL-TIME RADAR EXECUTION:\n"
+    "   - Once ALL 4 dimensions are collected across multiple turns, immediately invoke 'get_current_weather'.\n"
+    "   - Generate a personalized multi-day itinerary in fluent English:\n"
+    "     * Adapt locations to Budget Level.\n"
+    "     * Adapt structure to Duration (e.g., Day 1, Day 2).\n"
+    "     * Adapt activities STRICTLY to today's live weather (e.g., if temp < 5°C, focus on indoors; if wind > 8 m/s, cancel heights).\n\n"
+    "OUTPUT FORMAT REQUIREMENTS:\n"
+    "  - FINAL BLUEPRINT (Only output when all 4 dimensions are met and weather is fetched):\n"
+    "    * Step 1: [Real-Time Meteorological Diagnostic]\n"
+    "    * Step 2: [Profile & Budget Aware Safety Warnings]\n"
+    "    * Step 3: [Weather-Aware Personalized Multi-Day Itinerary]"
+)
 
-    while True:
-        user_input = input("🧑 User: ")
-        if user_input.lower() == 'quit':
-            print("Agent stopped. Bye!")
-            break
-            
-        if not user_input.strip():
-            continue
-            
-        messages.append({"role": "user", "content": user_input})
-
-        # Step 1: Perceive input & decide on tool execution
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=messages,
-            tools=tools,
-            tool_choice="auto"
-        )
+def handle_agent_reasoning(session_messages):
+    """
+    Step-by-step interactive reasoning engine.
+    """
+    if not any(m["role"] == "system" for m in session_messages):
+        session_messages.insert(0, {"role": "system", "content": SYSTEM_PROMPT})
         
-        msg = response.choices[0].message
-        messages.append(msg)
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=session_messages,
+        tools=tools,
+        tool_choice="auto"
+    )
+    
+    msg = response.choices[0].message
+    session_messages.append(msg)
+    
+    weather_analytics = None
 
-        # Step 2: Handle conditional action execution
-        if msg.tool_calls:
-            for tool_call in msg.tool_calls:
-                func_name = tool_call.function.name
-                args = json.loads(tool_call.function.arguments)
-                city = args.get("city")
-                
-                print(f"🤖 [Agent Log]: Target city '{city}' detected. Executing action -> Calling Weather API...")
-                
-                if func_name == "get_current_weather":
-                    weather_data = get_current_weather(city=city)
-                    print(f"📡 [Tool Output]: {weather_data}")
-                    
-                    # Feed tool results back into context memory
-                    messages.append({
-                        "tool_call_id": tool_call.id,
-                        "role": "tool",
-                        "name": func_name,
-                        "content": weather_data
-                    })
+    if msg.tool_calls:
+        for tool_call in msg.tool_calls:
+            func_name = tool_call.function.name
+            args = json.loads(tool_call.function.arguments)
+            city = args.get("city")
             
-            # Step 3: Generate customized itinerary based on live weather
-            final_response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=messages
-            )
-            reply = final_response.choices[0].message.content
-            print(f"\n✈️ Travel Planner:\n{reply}\n")
-            messages.append({"role": "assistant", "content": reply})
-        else:
-            # Fallback handling for standard conversations
-            print(f"\n✈️ Travel Planner:\n{msg.content}\n")
-
-        # Save session logs locally to demonstrate persistence
-        with open("chat_history.json", "w") as f:
-            json.dump([m if isinstance(m, dict) else m.model_dump() for m in messages], f, indent=4)
-
-if __name__ == "__main__":
-    run_agent()
+            if func_name == "get_current_weather":
+                weather_data_str = get_current_weather(city=city)
+                try:
+                    weather_analytics = json.loads(weather_data_str)
+                except:
+                    weather_analytics = None
+                
+                session_messages.append({
+                    "tool_call_id": tool_call.id,
+                    "role": "tool",
+                    "name": func_name,
+                    "content": weather_data_str
+                })
+        
+        final_response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=session_messages
+        )
+        reply = final_response.choices[0].message.content
+        return reply, weather_analytics
+        
+    else:
+        return msg.content, None
