@@ -83,6 +83,9 @@ streamlit run app.py
 
 ---
 
+## 💡 Demo vedio
+https://youtu.be/vfR20kFS_Lk
+
 *Developed by Zhaopeng Wen • 2026*
 
 ```
